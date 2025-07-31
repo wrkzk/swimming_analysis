@@ -1,0 +1,53 @@
+# PlatformIO
+.pio/
+.vscode/
+.DS_Store
+*.pyc
+*.o
+*.elf
+*.bin
+*.hex
+*.lst
+*.map
+*.su
+*.srec
+*.sym
+*.d
+*.gcno
+*.gcda
+*.gcov
+*.log
+*.swp
+*.bak
+*.tmp
+*.dump
+*.i
+*.s
+*.map
+*.su
+*.gdb
+*.gdbinit
+*.lock
+*.user
+*.env
+*.bak
+*.tmp
+
+# Libraries
+lib/.pio/
+lib/.vscode/
+
+# Build environment
+build/
+.pioenvs/
+
+# VS Code specific files
+.vscode/*.code-workspace
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
+
+# PlatformIO project specific files
+platformio.ini.old
+platformio.ini.bak
+platformio.ini.tmp
