@@ -158,8 +158,8 @@ void writeDataTask(void *pvParameters) {
         if (xQueueReceive(imuDataQueue, &data, portMAX_DELAY) == pdTRUE) {
 
             char lineBuffer[128];
-            snprintf(lineBuffer, sizeof(lineBuffer), "%.4lu,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f",
-                     data.timestamp / 1000.0,
+            snprintf(lineBuffer, sizeof(lineBuffer), "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f",
+                     data.timestamp / 1000.0f,
                      data.ax, data.ay, data.az,
                      data.gx, data.gy, data.gz);
             buffer[bufferIndex++] = lineBuffer;
