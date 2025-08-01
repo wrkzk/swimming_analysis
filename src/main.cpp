@@ -23,6 +23,7 @@ QueueHandle_t imuDataQueue;
 // Data logging constants
 const int DATA_LOG_FREQUENCY_HZ = 50; // Frequency to record data (Hz)
 const int BUFFER_SIZE = 50; // Buffer Size
+const int LINE_BUFFER_SIZE = 128; // Number if characters in a single buffer entry
 const int LOG_INTERVAL_MS = 1000 / DATA_LOG_FREQUENCY_HZ;
 
 // Tasks
@@ -66,9 +67,7 @@ void setup() {
         digitalWrite(LED_RED, LOW);
         digitalWrite(LED_BLUE, HIGH);
 
-        File data = InternalFS.open("/data.bin", FILE_O_READ);
-        IMUData entry;
-
+        File data = InternalFS.open("/data.csv", FILE_O_READ);
         if (data) {
             Serial.begin(115200);
             while (!Serial) {
@@ -77,27 +76,18 @@ void setup() {
             }
             Serial.println("Serial found");
 
-            Serial.println("Reading from /data.bin:");
+            Serial.println("Reading from /data.csv:");
             Serial.println("---FILE START---");
-           
-            while (data.read((uint8_t*)&entry, sizeof(IMUData)) == sizeof(IMUData)) {
-                if (entry.timestamp == 0xFFFFFFFF) {
-                    Serial.println("time_s,ax,ay,az,gx,gy,gz");
-                } else {
-                    Serial.printf("%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
-                        entry.timestamp / 1000.0f,
-                        entry.ax, entry.ay, entry.az,
-                        entry.gx, entry.gy, entry.gz);
-                }
+            while (data.available()) {
+                Serial.write(data.read());
             }
-
             Serial.println("---FILE END---");
             Serial.println("Done");
 
-            Serial.println("Removing /data.bin...");
-            InternalFS.remove("/data.bin");
+            Serial.println("Removing /data.csv...");
+            InternalFS.remove("/data.csv");
             InternalFS.format();
-            Serial.println("Removed /data.bin successfully.");
+            Serial.println("Removed /data.csv successfully.");
         }
 
     // If the device is not connected to a computer: set LED to blue
@@ -115,20 +105,8 @@ void setup() {
         digitalWrite(LED_BLUE, HIGH);
         digitalWrite(LED_GREEN, LOW);
 
-        File data = InternalFS.open("/data.bin", FILE_O_WRITE);
-        data.seek(SEEK_END);
-        
-        // Write a divider line to separate separate data sessions
-        IMUData divider;
-        divider.timestamp = 0xFFFFFFFF;
-        divider.ax = NAN;
-        divider.ay = NAN;
-        divider.az = NAN;
-        divider.gx = NAN;
-        divider.gy = NAN;
-        divider.gz = NAN;
-
-        data.write((uint8_t*)&divider, sizeof(IMUData));
+        File data = InternalFS.open("/data.csv", FILE_O_WRITE);
+        data.println("time_s,ax,ay,az,gx,gy,gz");
         data.close();
 
         // Create the queue
@@ -169,22 +147,24 @@ void readIMUTask(void *pvParameters) {
 // file once the buffer has filled up
 void writeDataTask(void *pvParameters) {
     IMUData data;
-    IMUData buffer[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE][LINE_BUFFER_SIZE];
     int bufferIndex = 0;
 
-    File dataFile = InternalFS.open("/data.bin", FILE_O_WRITE);
-    dataFile.seek(SEEK_END);
+    File dataFile = InternalFS.open("/data.csv", FILE_O_WRITE);
 
     for (;;) {
         if (xQueueReceive(imuDataQueue, &data, portMAX_DELAY) == pdTRUE) {
 
-            buffer[bufferIndex] = data;
+            snprintf(buffer[bufferIndex], LINE_BUFFER_SIZE, "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f",
+                     data.timestamp / 1000.0f,
+                     data.ax, data.ay, data.az,
+                     data.gx, data.gy, data.gz);
             bufferIndex++;
 
             if (bufferIndex >= BUFFER_SIZE) {
 
                 for (int i = 0; i < bufferIndex; i++) {
-                    dataFile.write((uint8_t*)&buffer[i], sizeof(IMUData));
+                    dataFile.println(buffer[i]);
                 }
 
                 dataFile.flush();
