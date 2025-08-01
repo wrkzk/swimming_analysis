@@ -21,9 +21,10 @@ struct IMUData {
 QueueHandle_t imuDataQueue;
 
 // Data logging constants
-int dataLogFrequency = 50; // Frequency to record data (Hz)
-const int bufferSize = 50; // Buffer Size
-const int logInterval = 1000 / dataLogFrequency;
+const int DATA_LOG_FREQUENCY_HZ = 50; // Frequency to record data (Hz)
+const int BUFFER_SIZE = 50; // Buffer Size
+const int LINE_BUFFER_SIZE = 128; // Number if characters in a single buffer entry
+const int LOG_INTERVAL_MS = 1000 / DATA_LOG_FREQUENCY_HZ;
 
 // Tasks
 void readIMUTask(void *pvParameters);
@@ -105,7 +106,7 @@ void setup() {
         digitalWrite(LED_GREEN, LOW);
 
         File data = InternalFS.open("/data.csv", FILE_O_WRITE);
-        data.println("time,ax,ay,az,gx,gy,gz");
+        data.println("time_s,ax,ay,az,gx,gy,gz");
         data.close();
 
         // Create the queue
@@ -125,7 +126,7 @@ void readIMUTask(void *pvParameters) {
     IMUData data;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(logInterval);
+    const TickType_t xFrequency = pdMS_TO_TICKS(LOG_INTERVAL_MS);
 
     for (;;) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -146,25 +147,21 @@ void readIMUTask(void *pvParameters) {
 // file once the buffer has filled up
 void writeDataTask(void *pvParameters) {
     IMUData data;
-    String buffer[bufferSize];
+    char buffer[BUFFER_SIZE][LINE_BUFFER_SIZE];
     int bufferIndex = 0;
 
     File dataFile = InternalFS.open("/data.csv", FILE_O_WRITE);
-    if (!dataFile) {
-        vTaskDelete(NULL);
-    }
 
     for (;;) {
         if (xQueueReceive(imuDataQueue, &data, portMAX_DELAY) == pdTRUE) {
 
-            char lineBuffer[128];
-            snprintf(lineBuffer, sizeof(lineBuffer), "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f",
+            snprintf(buffer[bufferIndex], LINE_BUFFER_SIZE, "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f",
                      data.timestamp / 1000.0f,
                      data.ax, data.ay, data.az,
                      data.gx, data.gy, data.gz);
-            buffer[bufferIndex++] = lineBuffer;
+            bufferIndex++;
 
-            if (bufferIndex >= bufferSize) {
+            if (bufferIndex >= BUFFER_SIZE) {
 
                 for (int i = 0; i < bufferIndex; i++) {
                     dataFile.println(buffer[i]);
