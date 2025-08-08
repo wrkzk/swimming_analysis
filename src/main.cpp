@@ -29,7 +29,7 @@ QueueHandle_t imuDataQueue;
 
 // Data logging constants
 const int DATA_LOG_FREQUENCY_HZ = 50; // Frequency to record data (Hz)
-const int BUFFER_SIZE = 25; // Buffer Size
+const int BUFFER_SIZE = 50; // Buffer Size
 const int LINE_BUFFER_SIZE = 128; // Number if characters in a single buffer entry
 const int LOG_INTERVAL_MS = 1000 / DATA_LOG_FREQUENCY_HZ;
 
@@ -134,10 +134,14 @@ void dumpFlashAsCSV() {
         nrfx_qspi_read((uint8_t*)&data, sizeof(IMUData), addr);
         QSPI_WaitForReady();
 
-        Serial.printf("%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
-            data.timestamp / 1000.0f,
-            data.ax, data.ay, data.az,
-            data.gx, data.gy, data.gz);
+        if (data.timestamp == 0xFFFFFF) {
+            Serial.println("time_s,ax,ay,az,gx,gy,gz");
+        } else {
+            Serial.printf("%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+                data.timestamp / 1000.0f,
+                data.ax, data.ay, data.az,
+                data.gx, data.gy, data.gz);
+        }
 
         addr += sizeof(IMUData);
     }
@@ -210,6 +214,15 @@ void setup() {
         digitalWrite(LED_BLUE, HIGH);
         digitalWrite(LED_GREEN, LOW);
 
+        // Write header struct to memory
+        IMUData header;
+        header.timestamp = 0xFFFFFF;
+        header.ax = 0.0;
+        header.ay = 0.0;
+        header.az = 0.0;
+        header.gx = 0.0;
+        header.gz = 0.0;
+
         // Create the queue
         imuDataQueue = xQueueCreate(50, sizeof(IMUData));
 
@@ -233,8 +246,7 @@ void readIMUTask(void *pvParameters) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
         data.timestamp = millis();
-        //data.ax = myIMU.readFloatAccelX();
-        data.ax = 5.0;
+        data.ax = myIMU.readFloatAccelX();
         data.ay = myIMU.readFloatAccelY();
         data.az = myIMU.readFloatAccelZ();
         data.gx = myIMU.readFloatGyroX();
@@ -249,49 +261,22 @@ void readIMUTask(void *pvParameters) {
 // file once the buffer has filled up
 void writeDataTask(void *pvParameters) {
     IMUData data;
-    //int bufferIndex = 0;
-    //char buffer[BUFFER_SIZE][LINE_BUFFER_SIZE];
 
-    data.timestamp = millis();
-    data.ax = 3.0;
-    data.ay = 1.0;
-    data.az = 1.0;
-    data.gx = 1.0;
-    data.gy = 2.0;
-    data.gz = 1.0;
-
-    QSPI_WriteData(data);
+    int bufferIndex = 0;
+    IMUData dataBuffer[BUFFER_SIZE];
 
     for (;;) {
-    //    if (xQueueReceive(imuDataQueue, &data, 0) == pdTRUE) {
+        if (xQueueReceive(imuDataQueue, &data, 0) == pdTRUE) {
 
-    //        QSPI_WriteData(data);
+            dataBuffer[bufferIndex++] = data;
+            if (bufferIndex > BUFFER_SIZE) {
 
-            //snprintf(buffer[bufferIndex], LINE_BUFFER_SIZE, "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f",
-            //         data.timestamp / 1000.0f,
-            //         data.ax, data.ay, data.az,
-            //         data.gx, data.gy, data.gz);
-            //bufferIndex++;
-
-            data.timestamp = millis();
-            data.ax = 3.0;
-            data.ay = 1.0;
-            data.az = 1.0;
-            data.gx = 1.0;
-            data.gy = 2.0;
-            data.gz = 1.0;
-
-            QSPI_WriteData(data);
-            vTaskDelay(pdMS_TO_TICKS(20));
-
-            //if (bufferIndex >= BUFFER_SIZE) {
-
-            //    for (int i = 0; i < bufferIndex; i++) {
-            //        dataFile.println(buffer[i]);
-            //    }
+                for (int i = 0; i < bufferIndex; i++) {
+                    QSPI_WriteData(dataBuffer[i]);
+                }
                 
-            //    bufferIndex = 0;
-            //}
-        //}
+                bufferIndex = 0;
+            }
+        }
     }
 }
