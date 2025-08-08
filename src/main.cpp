@@ -1,6 +1,4 @@
-// Data recording steps:
-// Attach with USB-c port facing inward toward the swimmer
-
+// Not entirely sure why this is necessary
 #ifndef NRFX_QSPI_DEFAULT_CONFIG_IRQ_PRIORITY
 #define NRFX_QSPI_DEFAULT_CONFIG_IRQ_PRIORITY 6
 #endif
@@ -13,6 +11,7 @@
 #include <Adafruit_TinyUSB.h>
 #include <cstdio>
 
+// Instantiate IMU Class
 LSM6DS3 myIMU(I2C_MODE, 0x6A);
 
 // Struct to hold IMU data
@@ -29,39 +28,29 @@ QueueHandle_t imuDataQueue;
 
 // Data logging constants
 const int DATA_LOG_FREQUENCY_HZ = 50; // Frequency to record data (Hz)
-const int BUFFER_SIZE = 50; // Buffer Size
-const int LINE_BUFFER_SIZE = 128; // Number if characters in a single buffer entry
+const int BUFFER_SIZE = 50;           // Buffer Size
 const int LOG_INTERVAL_MS = 1000 / DATA_LOG_FREQUENCY_HZ;
 
-// Data write address
-uint32_t flash_write_addr = 0x1000;
-const uint32_t data_sector_start_addr = 0x1000;
-const uint32_t metadata_addr = 0x0;
+// Data addresses
+uint32_t flash_write_addr = 0x1000;              // Stores active write address in memory
+const uint32_t data_sector_start_addr = 0x1000;  // Beginning of memory data sector
+const uint32_t metadata_addr = 0x0;              // Beginning of memory metadata sector
 
 // Tasks
 void readIMUTask(void *pvParameters);
 void writeDataTask(void *pvParameters);
 
+// Wait for QSPI memory to not be busy
 void QSPI_WaitForReady() {
     while (nrfx_qspi_mem_busy_check() != NRFX_SUCCESS) {
         __WFI();
     }
 }
 
+// Initialize QSPI flash memory
 void QSPI_Initialize() {
     nrfx_qspi_config_t config = NRFX_QSPI_DEFAULT_CONFIG(21, 25, 20, 24, 22, 23);
     nrfx_err_t status = nrfx_qspi_init(&config, nullptr, nullptr);
-    if (status == NRFX_SUCCESS) {
-        Serial.println("(QSPI) Successfully Initialized");
-    } else if (status == NRFX_ERROR_TIMEOUT) {
-        Serial.println("(QSPI) Timed Out");
-    } else if (status == NRFX_ERROR_INVALID_STATE) {
-        Serial.println("(QSPI) Driver Already Initialized");
-    } else if (status == NRFX_ERROR_INVALID_PARAM) {
-        Serial.println("(QSPI) Pin Configuration Incorrect");
-    } else {
-        Serial.println("(QSPI) Unknown Error");
-    }
     QSPI_WaitForReady();
 
     nrf_qspi_cinstr_conf_t cinstr_cfg = {
@@ -72,43 +61,33 @@ void QSPI_Initialize() {
         .wipwait = false,
         .wren = true
     };
-    status = nrfx_qspi_cinstr_xfer(&cinstr_cfg, nullptr, nullptr);
-    if (status == NRFX_SUCCESS) {
-        Serial.println("(QSPI) Configuration Transferred");
-    } else if (status == NRFX_ERROR_TIMEOUT) {
-        Serial.println("(QSPI) Memory Busy / Connection Issue");
-    } else if (status == NRFX_ERROR_INVALID_STATE) {
-        Serial.println("(QSPI) Driver Handling Other Operation");
-    }
+
+    nrfx_qspi_cinstr_xfer(&cinstr_cfg, nullptr, nullptr);
     QSPI_WaitForReady();
 }
 
-void QSPI_EraseSector(uint32_t address) {
-    nrfx_qspi_erase(NRF_QSPI_ERASE_LEN_4KB, address);
-    QSPI_WaitForReady();
-}
-
+// Erase entire QSPI flash memory
 void QSPI_EraseChip() {
     nrfx_qspi_chip_erase();
     QSPI_WaitForReady();
 }
 
+// Save the active memory address to the metadata sector
 void QSPI_SaveWriteAddr() {
     nrfx_qspi_write((uint8_t*)&flash_write_addr, sizeof(flash_write_addr), metadata_addr);
     QSPI_WaitForReady();
 }
 
+// Write a single data entry to flash memory
+// Update active memory address, and save it
 void QSPI_WriteData(const IMUData& data) {
-    if (flash_write_addr % 4096 == 0) {
-        QSPI_EraseSector(flash_write_addr);
-    }
-
     nrfx_qspi_write((uint8_t*)&data, sizeof(IMUData), flash_write_addr);
     QSPI_WaitForReady();
     flash_write_addr += sizeof(IMUData);
     QSPI_SaveWriteAddr();
 }
 
+// After data has been printed to Serial, reset to prepare for next logging session
 void QSPI_ResetQSPI() {
     QSPI_EraseChip();
     flash_write_addr = data_sector_start_addr;
@@ -116,19 +95,25 @@ void QSPI_ResetQSPI() {
     QSPI_WaitForReady();
 }
 
+// Load the active memory address from the metadata sector to resume logging
 void QSPI_LoadWriteAddr() {
     nrfx_qspi_read((uint8_t*)&flash_write_addr, sizeof(flash_write_addr), metadata_addr);
     QSPI_WaitForReady();
 }
 
+// Output data as CSV to Serial
+// Use included python script to read Serial output and write to CSV file
 void dumpFlashAsCSV() {
     IMUData data;
     uint32_t addr = data_sector_start_addr;
 
+    Serial.println("Beginning QSPI read...");
     Serial.print("Starting read at: 0x");
     Serial.println(addr, HEX);
     Serial.print("Stopping read at: 0x");
     Serial.println(flash_write_addr, HEX);
+
+    Serial.println("---FILE START---");
 
     while (addr < flash_write_addr) {
         nrfx_qspi_read((uint8_t*)&data, sizeof(IMUData), addr);
@@ -145,6 +130,8 @@ void dumpFlashAsCSV() {
 
         addr += sizeof(IMUData);
     }
+
+    Serial.println("---FILE END---");
 }
 
 // Runs once on initialization
@@ -183,20 +170,17 @@ void setup() {
 
         Serial.begin(115200);
         while (!Serial) {
-            Serial.println("Waiting for serial");
+            Serial.println("Waiting for serial...");
             vTaskDelay(10);
         }
-        Serial.println("Serial found");
-
-        Serial.println("Dumping flash memory as CSV");
-        Serial.println("---FILE START---");
+        Serial.println("Serial found.");
+        
+        // Output data
         dumpFlashAsCSV();
-        Serial.println("---FILE END---");
-        Serial.println("Done");
 
-        Serial.println("Reformatting flash memory, resetting memory write addr to 0");
+        Serial.println("\nErasing QSPI flash...");
         QSPI_ResetQSPI();
-        Serial.println("Reformat successful");
+        Serial.println("Erase successful. Ready to log data.");
 
 
     // If the device is not connected to a computer: set LED to blue
