@@ -1,8 +1,6 @@
 #ifndef QSPI_H
 #define QSPI_H
 
-#include "LSM6DS3.h"
-
 // Not entirely sure why this is necessary
 #ifndef NRFX_QSPI_DEFAULT_CONFIG_IRQ_PRIORITY
 #define NRFX_QSPI_DEFAULT_CONFIG_IRQ_PRIORITY 6
