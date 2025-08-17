@@ -3,7 +3,7 @@
 #include "LSM6DS3.h" // Fix this - this allows the use of Serial, but not sure if its right library to use
 
 // Memory addresses
-uint32_t flash_write_addr = 0x0;                         // Active QSPI write address
+uint32_t flash_write_addr = 0x1000;             // Active QSPI write address
 const uint32_t metadata_addr = 0x0;             // Beginning of the metadata sector
 const uint32_t data_sector_start_addr = 0x1000; // Beginning of the data sector
 
@@ -42,10 +42,12 @@ void QSPI_SaveWriteAddr() {
 }
 
 void QSPI_WriteData(const IMUData& data) {
-    nrfx_qspi_write((uint8_t*)&data, sizeof(IMUData), flash_write_addr);
-    QSPI_WaitForReady();
+    int current_write_addr = flash_write_addr;
     flash_write_addr += sizeof(IMUData);
     QSPI_SaveWriteAddr();
+
+    nrfx_qspi_write((uint8_t*)&data, sizeof(IMUData), current_write_addr);
+    QSPI_WaitForReady();
 }
 
 void QSPI_ResetQSPI() {
