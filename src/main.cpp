@@ -92,7 +92,9 @@ void setup() {
         header.ay = 0.0;
         header.az = 0.0;
         header.gx = 0.0;
+        header.gy = 0.0;
         header.gz = 0.0;
+        
         QSPI_WriteData(header);
 
         // Create the queue
@@ -141,7 +143,7 @@ void writeDataTask(void *pvParameters) {
         if (xQueueReceive(imuDataQueue, &data, 0) == pdTRUE) {
 
             dataBuffer[bufferIndex++] = data;
-            if (bufferIndex > BUFFER_SIZE) {
+            if (bufferIndex >= BUFFER_SIZE) {
 
                 for (int i = 0; i < bufferIndex; i++) {
                     QSPI_WriteData(dataBuffer[i]);
