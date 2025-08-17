@@ -1,6 +1,8 @@
 #ifndef QSPI_H
 #define QSPI_H
 
+#include <stdint.h>
+
 // Not entirely sure why this is necessary
 #ifndef NRFX_QSPI_DEFAULT_CONFIG_IRQ_PRIORITY
 #define NRFX_QSPI_DEFAULT_CONFIG_IRQ_PRIORITY 6
@@ -9,9 +11,15 @@
 // Struct to hold IMU data
 #pragma pack(push, 1)
 struct IMUData {
-    unsigned long timestamp;
+    uint32_t timestamp;
     float ax, ay, az;
     float gx, gy, gz;
+};
+
+// Struct to store metadata entry
+struct MetaEntry {
+    uint32_t addr;
+    uint32_t addr_inv;
 };
 #pragma pack(pop)
 
