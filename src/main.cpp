@@ -82,12 +82,23 @@ void setup() {
         delay(100);
         myIMU.begin();
 
+        // Discard the first 10 samples - letting sensor warm up
+        for (int i = 0; i < 10; i++) {
+            myIMU.readFloatAccelX();
+            myIMU.readFloatAccelY();
+            myIMU.readFloatAccelZ();
+            myIMU.readFloatGyroX();
+            myIMU.readFloatGyroY();
+            myIMU.readFloatGyroZ();
+            vTaskDelay(pdMS_TO_TICKS(LOG_INTERVAL_MS));
+        }
+
         digitalWrite(LED_BLUE, HIGH);
         digitalWrite(LED_GREEN, LOW);
 
         // Write header struct to memory
         IMUData header;
-        header.timestamp = 0xFFFFFF;
+        header.timestamp = 0xFFFFFFFFu;
         header.ax = 0.0;
         header.ay = 0.0;
         header.az = 0.0;
