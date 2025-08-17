@@ -94,8 +94,9 @@ void setup() {
         header.gx = 0.0;
         header.gy = 0.0;
         header.gz = 0.0;
-        
+
         QSPI_WriteData(header);
+        QSPI_SaveWriteAddr();
 
         // Create the queue
         imuDataQueue = xQueueCreate(50, sizeof(IMUData));
@@ -149,6 +150,7 @@ void writeDataTask(void *pvParameters) {
                     QSPI_WriteData(dataBuffer[i]);
                 }
                 
+                QSPI_SaveWriteAddr();
                 bufferIndex = 0;
             }
         }

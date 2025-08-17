@@ -6,6 +6,7 @@
 uint32_t flash_write_addr = 0x1000;             // Active QSPI write address
 const uint32_t metadata_addr = 0x0;             // Beginning of the metadata sector
 const uint32_t data_sector_start_addr = 0x1000; // Beginning of the data sector
+const uint32_t METADATA_SECTOR_SIZE = 4096;     // 4KB sector size
 
 void QSPI_WaitForReady() {
     while (nrfx_qspi_mem_busy_check() != NRFX_SUCCESS) {
@@ -36,30 +37,58 @@ void QSPI_EraseChip() {
     QSPI_WaitForReady();
 }
 
+void QSPI_EraseMetadataSector() {
+    nrfx_qspi_erase(NRF_QSPI_ERASE_LEN_4KB, metadata_addr);
+    QSPI_WaitForReady();
+}
+
 void QSPI_SaveWriteAddr() {
-    nrfx_qspi_write((uint8_t*)&flash_write_addr, sizeof(flash_write_addr), metadata_addr);
+    uint32_t addr = metadata_addr;
+    uint32_t value;
+
+    while (addr < metadata_addr + METADATA_SECTOR_SIZE) {
+        nrfx_qspi_read((uint8_t*)&value, sizeof(value), addr);
+        QSPI_WaitForReady();
+        if (value == 0xFFFFFF) {
+            break;
+        }
+        addr += sizeof(value);
+    }
+
+    if (addr >= metadata_addr + METADATA_SECTOR_SIZE) {
+        QSPI_EraseMetadataSector();
+        addr = metadata_addr;
+    }
+
+    nrfx_qspi_write((uint8_t*)&flash_write_addr, sizeof(flash_write_addr), addr);
     QSPI_WaitForReady();
 }
 
 void QSPI_WriteData(const IMUData& data) {
-    int current_write_addr = flash_write_addr;
-    flash_write_addr += sizeof(IMUData);
-    QSPI_SaveWriteAddr();
-
-    nrfx_qspi_write((uint8_t*)&data, sizeof(IMUData), current_write_addr);
+    nrfx_qspi_write((uint8_t*)&data, sizeof(IMUData), flash_write_addr);
     QSPI_WaitForReady();
+    flash_write_addr += sizeof(IMUData);
 }
 
 void QSPI_ResetQSPI() {
     QSPI_EraseChip();
     flash_write_addr = data_sector_start_addr;
-    nrfx_qspi_write((uint8_t*)&flash_write_addr, sizeof(flash_write_addr), metadata_addr);
-    QSPI_WaitForReady();
+    QSPI_SaveWriteAddr();
 }
 
 void QSPI_LoadWriteAddr() {
-    nrfx_qspi_read((uint8_t*)&flash_write_addr, sizeof(flash_write_addr), metadata_addr);
-    QSPI_WaitForReady();
+    uint32_t addr = metadata_addr;
+    uint32_t value;
+
+    while (addr < metadata_addr + METADATA_SECTOR_SIZE) {
+        nrfx_qspi_read((uint8_t*)&value, sizeof(value), addr);
+        QSPI_WaitForReady();
+        if (value == 0xFFFFFF) {
+            break;
+        }
+        flash_write_addr = value;
+        addr += sizeof(value);
+    }
 }
 
 void dumpFlashAsCSV() {
