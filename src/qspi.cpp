@@ -8,6 +8,18 @@ const uint32_t metadata_addr = 0x0;             // Beginning of the metadata sec
 const uint32_t data_sector_start_addr = 0x1000; // Beginning of the data sector
 const uint32_t METADATA_SECTOR_SIZE = 4096;     // 4KB sector size
 
+const uint32_t BLANK_WORD = 0xFFFFFFFFu;
+const size_t META_ENTRY_SIZE = sizeof(MetaEntry);
+const size_t MAX_META_ENTRIES = METADATA_SECTOR_SIZE / META_ENTRY_SIZE;
+
+static inline bool is_blank(const MetaEntry &e) {
+    return e.addr == BLANK_WORD && e.addr_inv == BLANK_WORD;
+}
+
+static inline bool is_valid(const MetaEntry &e) {
+    return (e.addr ^ e.addr_inv) == 0xFFFFFFFFu;
+}
+
 void QSPI_WaitForReady() {
     while (nrfx_qspi_mem_busy_check() != NRFX_SUCCESS) {
         __WFI();
@@ -43,24 +55,29 @@ void QSPI_EraseMetadataSector() {
 }
 
 void QSPI_SaveWriteAddr() {
-    uint32_t addr = metadata_addr;
-    uint32_t value;
+    MetaEntry entry;
+    uint32_t meta_ptr = metadata_addr;
+    size_t index = 0;
 
-    while (addr < metadata_addr + METADATA_SECTOR_SIZE) {
-        nrfx_qspi_read((uint8_t*)&value, sizeof(value), addr);
+    // Find the first blank metadata entry
+    for (; index < MAX_META_ENTRIES; ++index, meta_ptr += META_ENTRY_SIZE) {
+        nrfx_qspi_read(reinterpret_cast<uint8_t*>(&entry), sizeof(entry), meta_ptr);
         QSPI_WaitForReady();
-        if (value == 0xFFFFFF) {
-            break;
-        }
-        addr += sizeof(value);
+        if (is_blank(entry)) break;
     }
 
-    if (addr >= metadata_addr + METADATA_SECTOR_SIZE) {
+    // If the metadata sector is full, then erase it
+    if (index >= MAX_META_ENTRIES) {
         QSPI_EraseMetadataSector();
-        addr = metadata_addr;
+        meta_ptr = metadata_addr;
     }
 
-    nrfx_qspi_write((uint8_t*)&flash_write_addr, sizeof(flash_write_addr), addr);
+    // Write a new metadata entry to save logging positiion
+    MetaEntry new_entry;
+    new_entry.addr = flash_write_addr;
+    new_entry.addr_inv = ~flash_write_addr;
+
+    nrfx_qspi_write(reinterpret_cast<uint8_t*>(&new_entry), sizeof(new_entry), meta_ptr);
     QSPI_WaitForReady();
 }
 
@@ -77,17 +94,21 @@ void QSPI_ResetQSPI() {
 }
 
 void QSPI_LoadWriteAddr() {
-    uint32_t addr = metadata_addr;
-    uint32_t value;
+    flash_write_addr = data_sector_start_addr;
+    MetaEntry entry;
+    MetaEntry last_valid = {BLANK_WORD, BLANK_WORD};
 
-    while (addr < metadata_addr + METADATA_SECTOR_SIZE) {
-        nrfx_qspi_read((uint8_t*)&value, sizeof(value), addr);
+    // Load the last valid entry to find where to resume data logging
+    uint32_t meta_ptr = metadata_addr;
+    for (size_t i = 0; i < MAX_META_ENTRIES; ++i, meta_ptr += META_ENTRY_SIZE) {
+        nrfx_qspi_read(reinterpret_cast<uint8_t*>(&entry), sizeof(entry), meta_ptr);
         QSPI_WaitForReady();
-        if (value == 0xFFFFFF) {
-            break;
-        }
-        flash_write_addr = value;
-        addr += sizeof(value);
+        if (is_blank(entry)) break;
+        if (is_valid(entry)) last_valid = entry;
+    }
+
+    if (is_valid(last_valid)) {
+        flash_write_addr = last_valid.addr;
     }
 }
 
@@ -107,7 +128,7 @@ void dumpFlashAsCSV() {
         nrfx_qspi_read((uint8_t*)&data, sizeof(IMUData), addr);
         QSPI_WaitForReady();
 
-        if (data.timestamp == 0xFFFFFF) {
+        if (data.timestamp == 0xFFFFFFFFu) {
             Serial.println("time_s,ax,ay,az,gx,gy,gz");
         } else {
             Serial.printf("%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
