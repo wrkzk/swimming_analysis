@@ -1,13 +1,18 @@
 // Includes
 #include "qspi.h"
-#include "LSM6DS3.h"
+#include "MPU9250.h"
 #include "Wire.h"
 #include <FreeRTOS.h>
 #include <Adafruit_TinyUSB.h>
 #include <cstdio>
 
+// MPU9250 I2C Settings
+#define I2Cclock 400000
+#define I2Cport Wire
+#define MPU9250_ADDRESS MPU9250_ADDRESS_AD0
+
 // Instantiate IMU Class
-LSM6DS3 myIMU(I2C_MODE, 0x6A);
+MPU9250 myIMU(MPU9250_ADDRESS, I2Cport, I2Cclock);
 
 // IMU data queue
 QueueHandle_t imuDataQueue;
@@ -80,18 +85,15 @@ void setup() {
         Wire.begin();
         Wire.setClock(400000);
         delay(100);
-        myIMU.begin();
 
-        // Discard the first 10 samples - letting sensor warm up
-        for (int i = 0; i < 10; i++) {
-            myIMU.readFloatAccelX();
-            myIMU.readFloatAccelY();
-            myIMU.readFloatAccelZ();
-            myIMU.readFloatGyroX();
-            myIMU.readFloatGyroY();
-            myIMU.readFloatGyroZ();
-            vTaskDelay(pdMS_TO_TICKS(LOG_INTERVAL_MS));
-        }
+        // Initialize and calibrate the MPU9250
+        myIMU.MPU9250SelfTest(myIMU.selfTest);
+        myIMU.calibrateMPU9250(myIMU.gyroBias, myIMU.accelBias);
+        myIMU.initMPU9250();
+        myIMU.initAK8963(myIMU.factoryMagCalibration);
+        myIMU.getAres();
+        myIMU.getGres();
+        myIMU.getMres();
 
         digitalWrite(LED_BLUE, HIGH);
         digitalWrite(LED_GREEN, LOW);
@@ -105,6 +107,9 @@ void setup() {
         header.gx = 0.0;
         header.gy = 0.0;
         header.gz = 0.0;
+        header.mx = 0.0;
+        header.my = 0.0;
+        header.mz = 0.0;
 
         QSPI_WriteData(header);
         QSPI_SaveWriteAddr();
@@ -131,13 +136,24 @@ void readIMUTask(void *pvParameters) {
     for (;;) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
+        // Read IMU data
+        myIMU.readAccelData(myIMU.accelCount);
+        myIMU.readGyroData(myIMU.gyroCount);
+        myIMU.readMagData(myIMU.magCount);
+
+        // Write to struct
         data.timestamp = millis();
-        data.ax = myIMU.readFloatAccelX();
-        data.ay = myIMU.readFloatAccelY();
-        data.az = myIMU.readFloatAccelZ();
-        data.gx = myIMU.readFloatGyroX();
-        data.gy = myIMU.readFloatGyroY();
-        data.gz = myIMU.readFloatGyroZ();
+        data.ax = (float) myIMU.accelCount[0] * myIMU.aRes;
+        data.ay = (float) myIMU.accelCount[1] * myIMU.aRes;
+        data.az = (float) myIMU.accelCount[2] * myIMU.aRes;
+
+        data.gx = (float) myIMU.gyroCount[0] * myIMU.gRes;
+        data.gy = (float) myIMU.gyroCount[1] * myIMU.gRes;
+        data.gz = (float) myIMU.gyroCount[2] * myIMU.gRes;
+
+        data.mx = (float) myIMU.magCount[0] * myIMU.mRes * myIMU.factoryMagCalibration[0] - myIMU.magBias[0];
+        data.my = (float) myIMU.magCount[1] * myIMU.mRes * myIMU.factoryMagCalibration[1] - myIMU.magBias[1];
+        data.mz = (float) myIMU.magCount[2] * myIMU.mRes * myIMU.factoryMagCalibration[2] - myIMU.magBias[2];
 
         xQueueSend(imuDataQueue, &data, 0);
     }

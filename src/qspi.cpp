@@ -129,12 +129,13 @@ void dumpFlashAsCSV() {
         QSPI_WaitForReady();
 
         if (data.timestamp == 0xFFFFFFFFu) {
-            Serial.println("time_s,ax,ay,az,gx,gy,gz");
+            Serial.println("time_s,ax,ay,az,gx,gy,gz,mx,my,mz");
         } else {
-            Serial.printf("%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+            Serial.printf("%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
                 data.timestamp / 1000.0f,
                 data.ax, data.ay, data.az,
-                data.gx, data.gy, data.gz);
+                data.gx, data.gy, data.gz,
+                data.mx, data.my, data.mz);
         }
 
         addr += sizeof(IMUData);

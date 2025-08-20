@@ -14,6 +14,7 @@ struct IMUData {
     uint32_t timestamp;
     float ax, ay, az;
     float gx, gy, gz;
+    float mx, my, mz;
 };
 
 // Struct to store metadata entry
