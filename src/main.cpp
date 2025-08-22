@@ -95,6 +95,9 @@ void setup() {
         myIMU.getGres();
         myIMU.getMres();
 
+        // Calibrate the magnetometer
+        myIMU.magCalMPU9250(myIMU.magBias, myIMU.magScale);
+
         digitalWrite(LED_BLUE, HIGH);
         digitalWrite(LED_GREEN, LOW);
 
