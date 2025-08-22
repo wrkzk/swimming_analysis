@@ -86,6 +86,9 @@ void setup() {
         Wire.setClock(400000);
         delay(100);
 
+        // Set magnetomer refresh rate to 100Hz
+        myIMU.Mmode = MPU9250::M_100HZ;
+
         // Initialize and calibrate the MPU9250
         myIMU.MPU9250SelfTest(myIMU.selfTest);
         myIMU.calibrateMPU9250(myIMU.gyroBias, myIMU.accelBias);
