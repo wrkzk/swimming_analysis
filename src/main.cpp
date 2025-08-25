@@ -133,45 +133,55 @@ void readIMUTask(void *pvParameters) {
     float gx = 0, gy = 0, gz = 0;
     float qx = 0, qy = 0, qz = 0, qw = 0;
 
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(LOG_INTERVAL_MS);
+    bool gotAccel = false;
+    bool gotGyro = false;
+    bool gotQuat = false;
 
     sh2_SensorValue_t sensorValue;
 
     for (;;) {
-
-        // Wait until fixed interval has passed
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
     
         // Get latest sensor values
-        while(bno.getSensorEvent(&sensorValue)) {
+        if (bno.getSensorEvent(&sensorValue)) {
+
+            // Get the timestamp and read sensor values
+            uint32_t currentTime = millis();
             switch (sensorValue.sensorId) {
                 case SH2_ACCELEROMETER:
                     ax = sensorValue.un.accelerometer.x;
                     ay = sensorValue.un.accelerometer.y;
                     az = sensorValue.un.accelerometer.z;
+                    gotAccel = true;
                     break;
                 case SH2_GYROSCOPE_CALIBRATED:
                     gx = sensorValue.un.gyroscope.x;
                     gy = sensorValue.un.gyroscope.y;
                     gz = sensorValue.un.gyroscope.z;
+                    gotGyro = true;
                     break;
                 case SH2_ROTATION_VECTOR:
                     qx = sensorValue.un.rotationVector.i;
                     qy = sensorValue.un.rotationVector.j;
                     qz = sensorValue.un.rotationVector.k;
                     qw = sensorValue.un.rotationVector.real;
+                    gotQuat = true;
                     break;
             }
         }
 
-        // Fill in data struct and send to queue
-        data.timestamp = millis();
-        data.ax = ax; data.ay = ay; data.az = az;
-        data.gx = gx; data.gy = gy; data.gz = gz;
-        data.qx = qx; data.qy = qy; data.qz = qz; data.qw = qw;
+        if (gotAccel && gotGyro && gotQuat) {
+            // Fill in data struct and send to queue
+            data.timestamp = millis();
+            data.ax = ax; data.ay = ay; data.az = az;
+            data.gx = gx; data.gy = gy; data.gz = gz;
+            data.qx = qx; data.qy = qy; data.qz = qz; data.qw = qw;
 
-        xQueueSend(imuDataQueue, &data, 0);
+            xQueueSend(imuDataQueue, &data, 0);
+
+            gotAccel = false;
+            gotGyro = false;
+            gotQuat = false;
+        }
     }
 }
 
