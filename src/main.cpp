@@ -1,9 +1,9 @@
 // Includes
 #include "qspi.h"
-#include "MPU9250.h"
 #include "Wire.h"
 #include <FreeRTOS.h>
 #include <Adafruit_TinyUSB.h>
+#include <Adafruit_BNO08x.h>
 #include <cstdio>
 
 // MPU9250 I2C Settings
@@ -12,7 +12,8 @@
 #define MPU9250_ADDRESS MPU9250_ADDRESS_AD0
 
 // Instantiate IMU Class
-MPU9250 myIMU(MPU9250_ADDRESS, I2Cport, I2Cclock);
+Adafruit_BNO08x bno;
+static const uint8_t BNO_ADDR = 0x4A;
 
 // IMU data queue
 QueueHandle_t imuDataQueue;
@@ -86,20 +87,12 @@ void setup() {
         Wire.setClock(400000);
         delay(100);
 
-        // Set magnetomer refresh rate to 100Hz
-        myIMU.Mmode = MPU9250::M_100HZ;
-
-        // Initialize and calibrate the MPU9250
-        myIMU.MPU9250SelfTest(myIMU.selfTest);
-        myIMU.calibrateMPU9250(myIMU.gyroBias, myIMU.accelBias);
-        myIMU.initMPU9250();
-        myIMU.initAK8963(myIMU.factoryMagCalibration);
-        myIMU.getAres();
-        myIMU.getGres();
-        myIMU.getMres();
-
-        // Calibrate the magnetometer
-        myIMU.magCalMPU9250(myIMU.magBias, myIMU.magScale);
+        // Initialize the BNO08x IMU
+        bno.begin_I2C(BNO_ADDR, &Wire);
+        uint32_t interval_us = 1000000UL / DATA_LOG_FREQUENCY_HZ;
+        bno.enableReport(SH2_ACCELEROMETER, interval_us);
+        bno.enableReport(SH2_GYROSCOPE_CALIBRATED, interval_us);
+        bno.enableReport(SH2_ROTATION_VECTOR, interval_us);
 
         digitalWrite(LED_BLUE, HIGH);
         digitalWrite(LED_GREEN, LOW);
@@ -113,9 +106,10 @@ void setup() {
         header.gx = 0.0;
         header.gy = 0.0;
         header.gz = 0.0;
-        header.mx = 0.0;
-        header.my = 0.0;
-        header.mz = 0.0;
+        header.qx = 0.0;
+        header.qy = 0.0;
+        header.qz = 0.0;
+        header.qw = 0.0;
 
         QSPI_WriteData(header);
         QSPI_SaveWriteAddr();
@@ -135,31 +129,47 @@ void loop() {}
 // Task to continuously read data from the IMU at a specified interval
 void readIMUTask(void *pvParameters) {
     IMUData data;
+    float ax = 0, ay = 0, az = 0;
+    float gx = 0, gy = 0, gz = 0;
+    float qx = 0, qy = 0, qz = 0, qw = 0;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(LOG_INTERVAL_MS);
 
+    sh2_SensorValue_t sensorValue;
+
     for (;;) {
+
+        // Wait until fixed interval has passed
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    
+        // Get latest sensor values
+        while(bno.getSensorEvent(&sensorValue)) {
+            switch (sensorValue.sensorId) {
+                case SH2_ACCELEROMETER:
+                    ax = sensorValue.un.accelerometer.x;
+                    ay = sensorValue.un.accelerometer.y;
+                    az = sensorValue.un.accelerometer.z;
+                    break;
+                case SH2_GYROSCOPE_CALIBRATED:
+                    gx = sensorValue.un.gyroscope.x;
+                    gy = sensorValue.un.gyroscope.y;
+                    gz = sensorValue.un.gyroscope.z;
+                    break;
+                case SH2_ROTATION_VECTOR:
+                    qx = sensorValue.un.rotationVector.i;
+                    qy = sensorValue.un.rotationVector.j;
+                    qz = sensorValue.un.rotationVector.k;
+                    qw = sensorValue.un.rotationVector.real;
+                    break;
+            }
+        }
 
-        // Read IMU data
-        myIMU.readAccelData(myIMU.accelCount);
-        myIMU.readGyroData(myIMU.gyroCount);
-        myIMU.readMagData(myIMU.magCount);
-
-        // Write to struct
+        // Fill in data struct and send to queue
         data.timestamp = millis();
-        data.ax = (float) myIMU.accelCount[0] * myIMU.aRes;
-        data.ay = (float) myIMU.accelCount[1] * myIMU.aRes;
-        data.az = (float) myIMU.accelCount[2] * myIMU.aRes;
-
-        data.gx = (float) myIMU.gyroCount[0] * myIMU.gRes;
-        data.gy = (float) myIMU.gyroCount[1] * myIMU.gRes;
-        data.gz = (float) myIMU.gyroCount[2] * myIMU.gRes;
-
-        data.mx = (float) myIMU.magCount[0] * myIMU.mRes * myIMU.factoryMagCalibration[0] - myIMU.magBias[0];
-        data.my = (float) myIMU.magCount[1] * myIMU.mRes * myIMU.factoryMagCalibration[1] - myIMU.magBias[1];
-        data.mz = (float) myIMU.magCount[2] * myIMU.mRes * myIMU.factoryMagCalibration[2] - myIMU.magBias[2];
+        data.ax = ax; data.ay = ay; data.az = az;
+        data.gx = gx; data.gy = gy; data.gz = gz;
+        data.qx = qx; data.qy = qy; data.qz = qz; data.qw = qw;
 
         xQueueSend(imuDataQueue, &data, 0);
     }
