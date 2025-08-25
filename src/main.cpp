@@ -167,20 +167,20 @@ void readIMUTask(void *pvParameters) {
                     gotQuat = true;
                     break;
             }
-        }
 
-        if (gotAccel && gotGyro && gotQuat) {
-            // Fill in data struct and send to queue
-            data.timestamp = millis();
-            data.ax = ax; data.ay = ay; data.az = az;
-            data.gx = gx; data.gy = gy; data.gz = gz;
-            data.qx = qx; data.qy = qy; data.qz = qz; data.qw = qw;
+            if (gotAccel && gotGyro && gotQuat) {
+                // Fill in data struct and send to queue
+                data.timestamp = currentTime;
+                data.ax = ax; data.ay = ay; data.az = az;
+                data.gx = gx; data.gy = gy; data.gz = gz;
+                data.qx = qx; data.qy = qy; data.qz = qz; data.qw = qw;
 
-            xQueueSend(imuDataQueue, &data, 0);
+                xQueueSend(imuDataQueue, &data, 0);
 
-            gotAccel = false;
-            gotGyro = false;
-            gotQuat = false;
+                gotAccel = false;
+                gotGyro = false;
+                gotQuat = false;
+            }
         }
     }
 }
@@ -194,7 +194,7 @@ void writeDataTask(void *pvParameters) {
     IMUData dataBuffer[BUFFER_SIZE];
 
     for (;;) {
-        if (xQueueReceive(imuDataQueue, &data, 0) == pdTRUE) {
+        if (xQueueReceive(imuDataQueue, &data, portMAX_DELAY) == pdTRUE) {
 
             dataBuffer[bufferIndex++] = data;
             if (bufferIndex >= BUFFER_SIZE) {
