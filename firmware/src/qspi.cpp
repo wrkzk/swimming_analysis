@@ -1,6 +1,6 @@
 #include "qspi.h"
 #include "nrfx_qspi.h"
-#include "LSM6DS3.h" // Fix this - this allows the use of Serial, but not sure if its right library to use
+#include "Arduino.h"
 
 // Memory addresses
 uint32_t flash_write_addr = 0x1000;             // Active QSPI write address
@@ -131,7 +131,7 @@ void dumpFlashAsCSV() {
         if (data.timestamp == 0xFFFFFFFFu) {
             Serial.println("time_s,ax,ay,az,gx,gy,gz,qx,qy,qz,qw");
         } else {
-            Serial.printf("%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+            Serial.printf("%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
                 data.timestamp / 1000.0f,
                 data.ax, data.ay, data.az,
                 data.gx, data.gy, data.gz,

@@ -19,7 +19,7 @@ static const uint8_t BNO_ADDR = 0x4A;
 QueueHandle_t imuDataQueue;
 
 // Data logging constants
-const int DATA_LOG_FREQUENCY_HZ = 50; // Frequency to record data (Hz)
+const int DATA_LOG_FREQUENCY_HZ = 40; // Frequency to record data (Hz)
 const int BUFFER_SIZE = 50;           // Buffer Size
 const int LOG_INTERVAL_MS = 1000 / DATA_LOG_FREQUENCY_HZ;
 
@@ -90,9 +90,10 @@ void setup() {
         // Initialize the BNO08x IMU
         bno.begin_I2C(BNO_ADDR, &Wire);
         uint32_t interval_us = 1000000UL / DATA_LOG_FREQUENCY_HZ;
+        uint32_t interval_us_slow = 1000000UL / 20;
         bno.enableReport(SH2_ACCELEROMETER, interval_us);
         bno.enableReport(SH2_GYROSCOPE_CALIBRATED, interval_us);
-        bno.enableReport(SH2_ROTATION_VECTOR, interval_us);
+        bno.enableReport(SH2_ROTATION_VECTOR, interval_us_slow);
 
         digitalWrite(LED_BLUE, HIGH);
         digitalWrite(LED_GREEN, LOW);
@@ -129,59 +130,59 @@ void loop() {}
 // Task to continuously read data from the IMU at a specified interval
 void readIMUTask(void *pvParameters) {
     IMUData data;
-    float ax = 0, ay = 0, az = 0;
-    float gx = 0, gy = 0, gz = 0;
-    float qx = 0, qy = 0, qz = 0, qw = 0;
-
-    bool gotAccel = false;
-    bool gotGyro = false;
-    bool gotQuat = false;
-
     sh2_SensorValue_t sensorValue;
 
-    for (;;) {
-    
-        // Get latest sensor values
-        if (bno.getSensorEvent(&sensorValue)) {
+    float latest_qx = 0.0, latest_qy = 0.0, latest_qz = 0.0, latest_qw = 0.0;
 
-            // Get the timestamp and read sensor values
-            uint32_t currentTime = millis();
+    // These flags are persistent. They are only reset after a full packet is sent.
+    bool hasAccel = false;
+    bool hasGyro = false;
+
+    for (;;) {
+        // This task will now run continuously, cooperatively checking for data.
+        
+        if (bno.getSensorEvent(&sensorValue)) {
+            // A new report has arrived from the sensor.
             switch (sensorValue.sensorId) {
                 case SH2_ACCELEROMETER:
-                    ax = sensorValue.un.accelerometer.x;
-                    ay = sensorValue.un.accelerometer.y;
-                    az = sensorValue.un.accelerometer.z;
-                    gotAccel = true;
+                    data.ax = sensorValue.un.accelerometer.x;
+                    data.ay = sensorValue.un.accelerometer.y;
+                    data.az = sensorValue.un.accelerometer.z;
+                    hasAccel = true;
                     break;
                 case SH2_GYROSCOPE_CALIBRATED:
-                    gx = sensorValue.un.gyroscope.x;
-                    gy = sensorValue.un.gyroscope.y;
-                    gz = sensorValue.un.gyroscope.z;
-                    gotGyro = true;
+                    data.gx = sensorValue.un.gyroscope.x;
+                    data.gy = sensorValue.un.gyroscope.y;
+                    data.gz = sensorValue.un.gyroscope.z;
+                    hasGyro = true;
                     break;
                 case SH2_ROTATION_VECTOR:
-                    qx = sensorValue.un.rotationVector.i;
-                    qy = sensorValue.un.rotationVector.j;
-                    qz = sensorValue.un.rotationVector.k;
-                    qw = sensorValue.un.rotationVector.real;
-                    gotQuat = true;
+                    latest_qx = sensorValue.un.rotationVector.i;
+                    latest_qy = sensorValue.un.rotationVector.j;
+                    latest_qz = sensorValue.un.rotationVector.k;
+                    latest_qw = sensorValue.un.rotationVector.real;
                     break;
             }
 
-            if (gotAccel && gotGyro && gotQuat) {
-                // Fill in data struct and send to queue
-                data.timestamp = currentTime;
-                data.ax = ax; data.ay = ay; data.az = az;
-                data.gx = gx; data.gy = gy; data.gz = gz;
-                data.qx = qx; data.qy = qy; data.qz = qz; data.qw = qw;
+            // Check if we have collected a complete set of data.
+            if (hasAccel && hasGyro) {
+                data.qx = latest_qx;
+                data.qy = latest_qy;
+                data.qz = latest_qz;
+                data.qw = latest_qw;
 
+                data.timestamp = xTaskGetTickCount();
                 xQueueSend(imuDataQueue, &data, 0);
 
-                gotAccel = false;
-                gotGyro = false;
-                gotQuat = false;
+                // Reset the flags to begin assembling the next packet.
+                hasAccel = false;
+                hasGyro = false;
             }
         }
+        
+        // A small delay is crucial to prevent this task from starving all others.
+        // This gives the I2C driver and other system tasks time to run.
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
