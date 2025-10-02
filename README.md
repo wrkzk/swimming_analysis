@@ -1,2 +1,2 @@
-## Seed Studio XIAO nRF52840 Sense IMU data logger
-This was created to log data from wrist-mounted wearable while swimming, however it can be used for any application that needs data logging from the nRF82540 built in IMU.
+## Code & Data for 2025 AI, Privacy, and Security REU @ Northwestern University
+All data logging and analysis code can be found in this repository, as well as the raw and processed data files.
